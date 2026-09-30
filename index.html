@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>abhishek@server:~$ — System Dashboard</title>
+<meta name="description" content="abhishek.server — Founder of GENOIS (AI Career OS, genois.in). Full-stack engineer. Live dashboard: repos, services, deployments, logs.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='10' fill='%230a0a0a'/><text x='32' y='44' font-family='monospace' font-size='34' font-weight='700' text-anchor='middle' fill='%2322c55e'>A</text></svg>">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script>
+tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']}}}}
+</script>
+<style>
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#0a0a0a}
+::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#555}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes scanline{0%{top:-4px}100%{top:100%}}
+.cursor-blink{animation:blink 1s step-end infinite}
+.pulse-dot{animation:pulse-green 2s infinite}
+.reveal{opacity:0;transform:translateY(24px);transition:all .7s cubic-bezier(.22,1,.36,1)}
+.reveal.active{opacity:1;transform:translateY(0)}
+.service-card{transition:border-color .3s,box-shadow .3s}
+.service-card:hover{border-color:rgba(34,197,94,.25);box-shadow:0 0 30px rgba(34,197,94,.05)}
+.deploy-card{transition:border-color .3s,box-shadow .3s}
+.deploy-card:hover{border-color:rgba(6,182,212,.25);box-shadow:0 0 30px rgba(6,182,212,.04)}
+.terminal-window:focus-within{border-color:rgba(34,197,94,.3)!important}
+.metric-bar{transition:width 1.2s ease-out}
+.boot-line{animation:fadeIn .15s ease-out}
+.log-line{animation:fadeIn .3s ease-out}
+.scanline::after{content:'';position:absolute;left:0;width:100%;height:4px;background:rgba(34,197,94,.03);animation:scanline 4s linear infinite;pointer-events:none}
+.glow-text{text-shadow:0 0 20px rgba(34,197,94,.3)}
+.gh-cell{transition:transform .15s}
+.gh-cell:hover{transform:scale(1.8);z-index:10}
+.repo-row{transition:background .2s}
+.repo-row:hover{background:#161616}
+#boot-overlay{transition:opacity .6s ease-out}
+</style>
+</head>
+<body class="bg-[#0a0a0a] text-neutral-200 font-sans antialiased overflow-hidden">
+
+<!-- Boot Sequence Overlay -->
+<div id="boot-overlay" class="fixed inset-0 z-[100] bg-[#0a0a0a] flex items-start justify-center pt-[20vh]">
+  <div id="boot-text" class="font-mono text-sm text-green-500 space-y-1 px-4 max-w-xl w-full"></div>
+</div>
+
+<!-- Scroll to Top -->
+<button id="scroll-top-btn" onclick="window.scrollTo({top:0,behavior:'smooth'})"
+  class="fixed bottom-6 right-6 z-50 w-10 h-10 bg-[#111111] border border-[#2a2a2a] rounded-lg flex items-center justify-center text-neutral-500 hover:text-green-500 hover:border-green-500/30 transition-all duration-300 opacity-0 pointer-events-none">
+  <i data-lucide="arrow-up" class="w-4 h-4"></i>
+</button>
+
+<!-- Status Bar -->
+<div id="status-bar" class="fixed top-0 left-0 right-0 z-50 h-8 bg-[#0d0d0d] border-b border-[#1a1a1a] font-mono text-[11px] text-neutral-500 flex items-center px-4 gap-6 opacity-0 transition-opacity duration-500">
+  <div class="flex items-center gap-2">
+    <i data-lucide="server" class="w-3 h-3 text-green-500"></i>
+    <span class="text-neutral-400">abhishek.server</span>
+  </div>
+  <div class="hidden sm:flex items-center gap-1.5">
+    <span>CPU</span>
+    <div class="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden"><div id="cpu-bar" class="metric-bar h-full bg-green-500 rounded-full" style="width:0%"></div></div>
+    <span id="cpu-val" class="text-neutral-400 w-8">0%</span>
+  </div>
+  <div class="hidden sm:flex items-center gap-1.5">
+    <span>MEM</span>
+    <div class="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden"><div id="mem-bar" class="metric-bar h-full bg-cyan-500 rounded-full" style="width:0%"></div></div>
+    <span id="mem-val" class="text-neutral-400 w-8">0%</span>
+  </div>
+  <div class="hidden md:flex items-center gap-1.5"><span>CONN</span><span id="conn-val" class="text-neutral-400">0</span></div>
+  <div class="hidden md:flex items-center gap-1.5"><span>IP</span><span id="ip-val" class="text-neutral-400">Loading...</span></div>
+  <div class="ml-auto flex items-center gap-3">
+    <span class="hidden lg:inline text-neutral-600">UP <span id="uptime-val" class="text-neutral-400">00:00:00</span></span>
+    <div class="flex items-center gap-1.5">
+      <span class="w-1.5 h-1.5 rounded-full bg-green-500 pulse-dot"></span>
+      <span class="text-green-500 font-medium">OPERATIONAL</span>
+    </div>
+  </div>
+</div>
+
+<!-- Navigation -->
+<nav id="main-nav" class="fixed top-8 left-0 right-0 z-40 h-12 bg-[#0d0d0d]/90 backdrop-blur-md border-b border-[#1a1a1a] font-mono text-[12px] flex items-center px-4 opacity-0 transition-opacity duration-500">
+  <div class="max-w-7xl mx-auto w-full flex items-center justify-between">
+    <div class="flex items-center gap-4 sm:gap-6 overflow-x-auto">
+      <a href="#overview" class="text-neutral-400 hover:text-green-500 transition-colors whitespace-nowrap">Overview</a>
+      <a href="#github" class="text-neutral-400 hover:text-green-500 transition-colors hidden sm:inline whitespace-nowrap">GitHub</a>
+      <a href="#services" class="text-neutral-400 hover:text-green-500 transition-colors hidden sm:inline whitespace-nowrap">Services</a>
+      <a href="#deployments" class="text-neutral-400 hover:text-green-500 transition-colors hidden sm:inline whitespace-nowrap">Deployments</a>
+      <a href="#education" class="text-neutral-400 hover:text-green-500 transition-colors hidden md:inline whitespace-nowrap">Education</a>
+      <a href="#logs" class="text-neutral-400 hover:text-green-500 transition-colors hidden md:inline whitespace-nowrap">Logs</a>
+      <a href="#terminal" class="text-neutral-400 hover:text-green-500 transition-colors hidden md:inline whitespace-nowrap">Terminal</a>
+      <a href="#blog" class="text-neutral-400 hover:text-green-500 transition-colors hidden lg:inline whitespace-nowrap">Blog</a>
+      <a href="#endpoints" class="text-neutral-400 hover:text-green-500 transition-colors hidden lg:inline whitespace-nowrap">Endpoints</a>
+      <a href="#/genois" class="text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5 rounded whitespace-nowrap hover:bg-green-500/20 transition-colors">GENOIS ↗</a>
+    </div>
+    <div class="flex items-center gap-4 ml-4">
+      <a href="https://github.com/abhigrajput" target="_blank" class="text-neutral-500 hover:text-neutral-300 transition-colors"><i data-lucide="github" class="w-4 h-4"></i></a>
+      <a href="https://linkedin.com/in/abhigrajput05" target="_blank" class="text-neutral-500 hover:text-neutral-300 transition-colors"><i data-lucide="linkedin" class="w-4 h-4"></i></a>
+      <button id="mobile-menu-btn" class="sm:hidden text-neutral-400 hover:text-neutral-200"><i data-lucide="menu" class="w-4 h-4"></i></button>
+    </div>
+  </div>
+</nav>
+
+<!-- Mobile Menu -->
+<div id="mobile-menu" class="fixed top-20 left-0 right-0 z-30 bg-[#0d0d0d]/95 backdrop-blur-md border-b border-[#1a1a1a] font-mono text-sm hidden">
+  <div class="flex flex-col p-4 gap-3">
+    <a href="#overview" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Overview</a>
+    <a href="#github" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">GitHub</a>
+    <a href="#services" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Services</a>
+    <a href="#deployments" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Deployments</a>
+    <a href="#education" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Education</a>
+    <a href="#logs" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Logs</a>
+    <a href="#terminal" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Terminal</a>
+    <a href="#blog" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Blog</a>
+    <a href="#endpoints" class="text-neutral-400 hover:text-green-500 py-1 mobile-link">Endpoints</a>
+    <a href="#/genois" class="text-green-500 py-1 mobile-link">GENOIS ↗</a>
+  </div>
+</div>
+
+<main class="pt-20">
+<div id="page-home">
+
+  <!-- ============ OVERVIEW ============ -->
+  <section id="overview" class="px-4 sm:px-6 pt-12 pb-8 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
+        <span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Open to Opportunities</span>
+      </div>
+      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-white mb-4">System <span class="text-green-500 glow-text">Overview</span></h1>
+    </div>
+
+    <div class="reveal bg-gradient-to-br from-[#111111] to-[#0d0d0d] border border-[#1e1e1e] rounded-xl p-5 sm:p-6 mb-8" style="transition-delay:.1s">
+      <div class="flex items-center gap-2 mb-3">
+        <i data-lucide="user" class="w-4 h-4 text-green-500"></i>
+        <span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Admin Profile</span>
+      </div>
+      <p class="text-neutral-300 text-[14px] sm:text-[15px] leading-relaxed max-w-3xl">
+        Hey, I'm <span class="text-white font-medium">Abhishek</span> — a founder who ships production AI systems, not just code. I build full-stack products with
+        <span class="text-cyan-400">Next.js</span>, <span class="text-cyan-400">Node.js</span> and <span class="text-cyan-400">Python</span>, design agent pipelines and data platforms that actually scale, and contribute to open source at
+        <span class="text-cyan-400">Microsoft</span> and <span class="text-green-400">Django</span>. Currently in my 7th semester at KLE Institute of Technology, Hubballi, I'm operating
+        <span class="text-amber-400">GENOIS — an AI Career OS live at genois.in</span> — with a 17-agent autonomous pipeline running the show. I don't just ship features — I build and operate production systems.
+      </p>
+    </div>
+
+    <div id="metrics-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 reveal" style="transition-delay:.2s"></div>
+
+    <div class="reveal mt-6 bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 font-mono text-[12px]" style="transition-delay:.3s">
+      <div class="flex items-center gap-2"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-neutral-500"></i><span class="text-neutral-500">HOST:</span><span class="text-neutral-300">KLE Institute of Technology, Hubballi</span></div>
+      <div class="hidden sm:block w-px h-4 bg-[#2a2a2a]"></div>
+      <div class="flex items-center gap-2"><i data-lucide="graduation-cap" class="w-3.5 h-3.5 text-neutral-500"></i><span class="text-neutral-500">KERNEL:</span><span class="text-neutral-300">B.E. CSE — 7th Semester</span></div>
+      <div class="hidden sm:block w-px h-4 bg-[#2a2a2a]"></div>
+      <div class="flex items-center gap-2"><i data-lucide="trophy" class="w-3.5 h-3.5 text-neutral-500"></i><span class="text-neutral-500">RANK:</span><span class="text-green-500">#768 Global</span></div>
+    </div>
+  </section>
+
+  <!-- ============ GITHUB ============ -->
+  <section id="github" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="github" class="w-4 h-4 text-white"></i>
+        <span class="font-mono text-[11px] text-white uppercase tracking-widest">Git Remote — Origin</span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">GitHub Activity</h2>
+      <p class="text-neutral-500 text-sm mt-1">Real-time contribution graph and repository status</p>
+    </div>
+
+    <div id="gh-stats" class="reveal grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6" style="transition-delay:.05s"></div>
+
+    <div class="reveal bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 sm:p-5 mb-6 overflow-x-auto" style="transition-delay:.1s">
+      <div class="flex items-center justify-between mb-4">
+        <div class="font-mono text-[11px] text-neutral-500">Contribution Activity — @abhigrajput · last 20 weeks</div>
+        <div class="flex items-center gap-1.5">
+          <span class="font-mono text-[9px] text-neutral-600">Less</span>
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#161616]"></span>
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#0e4429]"></span>
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#006d32]"></span>
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#26a641]"></span>
+          <span class="w-2.5 h-2.5 rounded-sm bg-[#39d353]"></span>
+          <span class="font-mono text-[9px] text-neutral-600">More</span>
+        </div>
+      </div>
+      <div id="heatmap" class="flex gap-[3px] min-w-[600px]"></div>
+    </div>
+
+    <div class="reveal bg-[#111111] border border-[#1e1e1e] rounded-xl overflow-hidden" style="transition-delay:.15s">
+      <div class="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-[#1e1e1e] bg-[#0d0d0d]">
+        <span class="font-mono text-[11px] text-neutral-500 uppercase tracking-wider">Pinned Repositories</span>
+        <a href="https://github.com/abhigrajput?tab=repositories" target="_blank" class="font-mono text-[11px] text-neutral-500 hover:text-green-500 transition-colors flex items-center gap-1">View all <i data-lucide="external-link" class="w-3 h-3"></i></a>
+      </div>
+      <div id="repo-list" class="divide-y divide-[#1a1a1a]"></div>
+    </div>
+
+    <div class="reveal mt-4 flex justify-end" style="transition-delay:.2s">
+      <a href="https://github.com/abhigrajput" target="_blank" class="group flex items-center gap-2 font-mono text-[12px] text-neutral-500 hover:text-white transition-colors">
+        <i data-lucide="github" class="w-4 h-4"></i>
+        <span>View full profile on GitHub</span>
+        <i data-lucide="arrow-right" class="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform"></i>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============ SERVICES ============ -->
+  <section id="services" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="boxes" class="w-4 h-4 text-green-500"></i>
+        <span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Docker PS</span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Running Services</h2>
+      <p class="text-neutral-500 text-sm mt-1">Core tech stack running as containerized microservices</p>
+    </div>
+    <div id="services-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+  </section>
+
+  <!-- ============ DEPLOYMENTS ============ -->
+  <section id="deployments" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="rocket" class="w-4 h-4 text-cyan-500"></i><span class="font-mono text-[11px] text-cyan-500 uppercase tracking-widest">Kubectl Get Deployments</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Active Deployments</h2>
+      <p class="text-neutral-500 text-sm mt-1">Production systems built and maintained</p>
+    </div>
+    <div id="deploy-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+  </section>
+
+  <!-- ============ ACHIEVEMENTS ============ -->
+  <section id="achievements" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="award" class="w-4 h-4 text-amber-500"></i><span class="font-mono text-[11px] text-amber-500 uppercase tracking-widest">System Highlights</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Achievements &amp; Open Source</h2>
+    </div>
+    <div id="ach-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"></div>
+  </section>
+
+  <!-- ============ EDUCATION ============ -->
+  <section id="education" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="hard-drive" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Root Filesystem</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Education &amp; Certifications</h2>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div class="reveal lg:col-span-2 bg-[#111111] border border-[#1e1e1e] rounded-xl p-5">
+        <div class="flex items-center gap-2 mb-3"><i data-lucide="graduation-cap" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-neutral-500 uppercase tracking-wider">Primary Mount</span></div>
+        <h3 class="text-white font-medium text-lg">KLE Institute of Technology</h3>
+        <p class="font-mono text-[12px] text-green-500 mt-1">B.E. Computer Science &amp; Engineering — 7th Sem (Final Year)</p>
+        <p class="font-mono text-[11px] text-neutral-600 mt-0.5">Hubballi, India · Sept 2023 — 2027</p>
+        <div class="flex flex-wrap gap-1.5 mt-4">
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">DSA</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Operating Systems</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">DBMS</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Networks</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Compiler Design</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">Machine Learning</span>
+          <span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">System Design</span>
+        </div>
+      </div>
+      <div id="certs-grid" class="reveal lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-3" style="transition-delay:.1s"></div>
+    </div>
+  </section>
+
+  <!-- ============ LOGS ============ -->
+  <section id="logs" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="scroll-text" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Tail -F Experience.Log</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Service Logs</h2>
+      <p class="text-neutral-500 text-sm mt-1">Full operation history of every deployment</p>
+    </div>
+    <div id="logs-list" class="space-y-4"></div>
+  </section>
+
+  <!-- ============ TERMINAL ============ -->
+  <section id="terminal" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="terminal" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">SSH Session</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Interactive Terminal</h2>
+      <p class="text-neutral-500 text-sm mt-1">Type <span class="text-green-500 font-mono">help</span> to see available commands</p>
+    </div>
+    <div class="reveal terminal-window scanline relative bg-[#0d0d0d] border border-[#1e1e1e] rounded-xl overflow-hidden max-w-3xl" style="transition-delay:.1s">
+      <div class="flex items-center gap-2 px-4 py-2.5 border-b border-[#1a1a1a]">
+        <span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span>
+        <span class="w-3 h-3 rounded-full bg-[#febc2e]"></span>
+        <span class="w-3 h-3 rounded-full bg-[#28c840]"></span>
+        <span class="font-mono text-[11px] text-neutral-600 ml-2">guest@abhishek.server: ~</span>
+      </div>
+      <div id="term-out" class="font-mono text-[12px] leading-6 p-4 h-64 overflow-y-auto text-neutral-400"></div>
+      <div class="flex items-center gap-2 px-4 py-3 border-t border-[#1a1a1a] font-mono text-[12px]">
+        <span class="text-green-500 whitespace-nowrap">guest@abhishek.server:~$</span>
+        <input id="term-in" class="flex-1 bg-transparent outline-none text-neutral-200 min-w-0" autocomplete="off" spellcheck="false" placeholder="type 'help' and press Enter">
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BLOG ============ -->
+  <section id="blog" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="file-text" class="w-4 h-4 text-cyan-500"></i><span class="font-mono text-[11px] text-cyan-500 uppercase tracking-widest">Var/Log/Posts</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Latest Writes</h2>
+      <p class="text-neutral-500 text-sm mt-1">Notes from building in production</p>
+    </div>
+    <div id="blog-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+  </section>
+
+  <!-- ============ ENDPOINTS (contact) ============ -->
+  <section id="endpoints" class="px-4 sm:px-6 py-16 max-w-7xl mx-auto scroll-mt-28">
+    <div class="reveal mb-8">
+      <div class="flex items-center gap-2 mb-2"><i data-lucide="plug" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">API — v1</span></div>
+      <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Endpoints</h2>
+      <p class="text-neutral-500 text-sm mt-1">Open a socket to the admin — usually responds within 24h</p>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="reveal bg-[#111111] border border-[#1e1e1e] rounded-xl overflow-hidden">
+        <div class="px-4 sm:px-5 py-3 border-b border-[#1e1e1e] bg-[#0d0d0d] font-mono text-[11px] text-neutral-500 uppercase tracking-wider">Available Routes</div>
+        <div id="endpoint-list" class="divide-y divide-[#1a1a1a]"></div>
+      </div>
+      <form id="contact-form" class="reveal bg-[#111111] border border-[#1e1e1e] rounded-xl p-5" style="transition-delay:.1s">
+        <div class="font-mono text-[11px] text-neutral-500 uppercase tracking-wider mb-4">POST /message</div>
+        <div class="mb-3">
+          <label class="block font-mono text-[10px] text-neutral-500 uppercase tracking-wider mb-1.5" for="f-name">name</label>
+          <input id="f-name" type="text" required placeholder="Jane Doe" class="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm text-neutral-200 outline-none focus:border-green-500/40 transition-colors">
+        </div>
+        <div class="mb-3">
+          <label class="block font-mono text-[10px] text-neutral-500 uppercase tracking-wider mb-1.5" for="f-email">email</label>
+          <input id="f-email" type="email" required placeholder="jane@example.com" class="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm text-neutral-200 outline-none focus:border-green-500/40 transition-colors">
+        </div>
+        <div class="mb-4">
+          <label class="block font-mono text-[10px] text-neutral-500 uppercase tracking-wider mb-1.5" for="f-msg">body</label>
+          <textarea id="f-msg" required placeholder="Hey Abhishek, let's talk about..." class="w-full bg-[#0d0d0d] border border-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm text-neutral-200 outline-none focus:border-green-500/40 transition-colors min-h-[110px] resize-y"></textarea>
+        </div>
+        <button type="submit" class="w-full bg-green-500 hover:bg-green-400 text-[#04120a] font-medium rounded-lg py-2.5 text-sm transition-colors flex items-center justify-center gap-2">
+          <i data-lucide="send" class="w-4 h-4"></i> Send message
+        </button>
+        <p class="font-mono text-[10px] text-neutral-600 mt-2.5 text-center">opens your mail client — nothing stored</p>
+      </form>
+    </div>
+  </section>
+</div>
+
+<!-- ============ GENOIS PAGE ============ -->
+<div id="page-genois" hidden>
+  <section class="px-4 sm:px-6 pt-8 pb-8 max-w-7xl mx-auto">
+    <a href="#/" class="font-mono text-[12px] text-neutral-500 hover:text-green-500 transition-colors">← back to abhishek.server</a>
+    <div class="reveal mt-8">
+      <div class="inline-flex items-center gap-2 border border-green-500/30 bg-green-500/10 rounded-full px-3 py-1 mb-5">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-500 pulse-dot"></span>
+        <span class="font-mono text-[10px] text-green-500 uppercase tracking-widest">Live Product · genois.in</span>
+      </div>
+      <h1 class="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white">GEN<span class="text-green-500 glow-text">OIS</span></h1>
+      <p class="text-lg sm:text-xl font-medium text-neutral-300 mt-3">The AI Career OS for Indian engineering students.</p>
+      <p class="text-neutral-400 text-[14px] sm:text-[15px] leading-relaxed max-w-3xl mt-3">
+        GENOIS turns a scattered job hunt into an operating system. It maps each student across <span class="text-white font-medium">10 engineering domains</span>,
+        generates a <span class="text-white font-medium">personalized roadmap</span>, and runs a <span class="text-white font-medium">17-agent autonomous pipeline</span> that
+        produces content, drives LinkedIn outreach and sends cold email — zero manual intervention. Founded, designed, engineered and operated solo by Abhishek.
+      </p>
+      <div class="flex flex-wrap gap-3 mt-6">
+        <a href="https://genois.in" target="_blank" class="bg-green-500 hover:bg-green-400 text-[#04120a] font-medium rounded-lg px-5 py-2.5 text-sm transition-colors">Open genois.in ↗</a>
+        <a href="mailto:abhigrajput2004@gmail.com?subject=GENOIS%20inquiry" class="border border-green-500/30 text-green-500 hover:bg-green-500/10 rounded-lg px-5 py-2.5 text-sm font-mono transition-colors">Talk to the founder</a>
+      </div>
+      <div class="flex flex-wrap gap-1.5 mt-5">
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Next.js 14</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Supabase</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Claude API</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">n8n</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Razorpay</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">Vercel</span>
+        <span class="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded">GoDaddy DNS</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-10 reveal" style="transition-delay:.1s">
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"><div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Agents</div><div class="text-2xl sm:text-3xl font-semibold text-white mt-1">17</div><div class="font-mono text-[11px] text-green-500 mt-1">● autonomous pipeline</div></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"><div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Domains</div><div class="text-2xl sm:text-3xl font-semibold text-white mt-1">10</div><div class="font-mono text-[11px] text-green-500 mt-1">● roadmap engine</div></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"><div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Tiers</div><div class="text-2xl sm:text-3xl font-semibold text-white mt-1">4</div><div class="font-mono text-[11px] text-cyan-500 mt-1">● razorpay billing</div></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"><div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">Team</div><div class="text-2xl sm:text-3xl font-semibold text-white mt-1">1</div><div class="font-mono text-[11px] text-amber-500 mt-1">● solo founder, e2e</div></div>
+    </div>
+    <div class="mt-12 space-y-3 reveal" style="transition-delay:.15s">
+      <div class="flex items-center gap-2 mb-4"><i data-lucide="git-branch" class="w-4 h-4 text-green-500"></i><span class="font-mono text-[11px] text-green-500 uppercase tracking-widest">Pipeline Trace</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 01]</span> <span class="text-white">profile-intake.service</span> <span class="text-neutral-600">— skills, interests &amp; targets captured and structured</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 02]</span> <span class="text-white">roadmap-gen.service</span> <span class="text-neutral-600">— personalized path across 10 domains, updated continuously</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 03]</span> <span class="text-white">content-gen.service</span> <span class="text-neutral-600">— posts, artifacts &amp; career assets via the Claude API</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 04]</span> <span class="text-white">linkedin-outreach.service</span> <span class="text-neutral-600">— autonomous, personalized, scheduled, tracked</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 05]</span> <span class="text-white">cold-email.service</span> <span class="text-neutral-600">— n8n-orchestrated campaigns, no manual steps</span></div>
+      <div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 font-mono text-[12px]"><span class="text-green-500">[stage 06]</span> <span class="text-white">scoring-billing.service</span> <span class="text-neutral-600">— readiness scoring + 4-tier Razorpay subscriptions</span></div>
+      <p class="font-mono text-[11px] text-neutral-600 pt-1">* full system runs 17 specialized agents — zero manual intervention</p>
+    </div>
+    <div class="reveal mt-12 bg-gradient-to-br from-[#111111] to-[#0d0d0d] border border-green-500/25 rounded-xl p-6 sm:p-8 text-center">
+      <h2 class="text-2xl sm:text-3xl font-semibold text-white">Your career, on autopilot.</h2>
+      <p class="text-neutral-500 text-sm mt-2 max-w-xl mx-auto">Roadmaps, agents, outreach and billing — one operating system for the entire journey from classroom to career.</p>
+      <a href="https://genois.in" target="_blank" class="inline-block mt-5 bg-green-500 hover:bg-green-400 text-[#04120a] font-medium rounded-lg px-6 py-2.5 text-sm transition-colors">Start at genois.in ↗</a>
+    </div>
+  </section>
+</div>
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-[#1a1a1a] mt-8">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <p class="font-mono text-[11px] text-neutral-600 mb-4">last login: <span id="last-login" class="text-neutral-400">—</span> from <span id="foot-ip" class="text-neutral-400">…</span></p>
+    <div class="flex flex-col sm:flex-row justify-between gap-6 font-mono text-[12px]">
+      <div class="flex flex-col gap-2">
+        <a href="#overview" class="text-neutral-500 hover:text-green-500 transition-colors">~/overview</a>
+        <a href="#services" class="text-neutral-500 hover:text-green-500 transition-colors">~/services</a>
+        <a href="#deployments" class="text-neutral-500 hover:text-green-500 transition-colors">~/deployments</a>
+        <a href="#/genois" class="text-neutral-500 hover:text-green-500 transition-colors">~/genois ↗</a>
+      </div>
+      <div class="flex flex-col gap-2">
+        <a href="https://github.com/abhigrajput" target="_blank" class="text-neutral-500 hover:text-green-500 transition-colors">github.com/abhigrajput</a>
+        <a href="https://linkedin.com/in/abhigrajput05" target="_blank" class="text-neutral-500 hover:text-green-500 transition-colors">linkedin.com/in/abhigrajput05</a>
+        <a href="mailto:abhigrajput2004@gmail.com" class="text-neutral-500 hover:text-green-500 transition-colors">abhigrajput2004@gmail.com</a>
+        <a href="https://genois.in" target="_blank" class="text-neutral-500 hover:text-green-500 transition-colors">genois.in (live)</a>
+      </div>
+    </div>
+    <p class="font-mono text-[10px] text-neutral-600 mt-6">© <span id="year"></span> abhishek.server · all systems operational</p>
+  </div>
+</footer>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] bg-[#111111] border border-green-500/40 text-neutral-200 font-mono text-[12px] px-4 py-2.5 rounded-lg opacity-0 pointer-events-none transition-all duration-300"></div>
+
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+const EMAIL='abhigrajput2004@gmail.com';
+
+/* ================= DATA (edit here) ================= */
+const SERVICES=[
+ {name:'frontend-core',img:'next:14 / react:18',port:'PORT 3000',mem:'96MB / 192MB',bar:'bg-green-500/60',tags:['Next.js','TypeScript','Tailwind']},
+ {name:'api-gateway',img:'node:20-express',port:'PORT 8000',mem:'128MB / 256MB',bar:'bg-green-500/60',tags:['Node.js','Express.js','REST']},
+ {name:'agent-pipeline',img:'claude-api + n8n',port:'SYSTEM',mem:'64MB / 128MB',bar:'bg-green-500/60',tags:['Claude API','n8n','Automation']},
+ {name:'primary-db',img:'postgres:16',port:'PORT 5432',mem:'256MB / 512MB',bar:'bg-cyan-500/60',tags:['PostgreSQL','SQL']},
+ {name:'doc-store',img:'mongodb:7',port:'PORT 27017',mem:'192MB / 384MB',bar:'bg-cyan-500/60',tags:['MongoDB','NoSQL']},
+ {name:'auth-stack',img:'supabase:latest',port:'SYSTEM',mem:'96MB / 192MB',bar:'bg-green-500/60',tags:['Supabase','Auth','RLS']},
+ {name:'ml-lab',img:'python:3.12',port:'PORT 8888',mem:'224MB / 512MB',bar:'bg-green-500/60',tags:['Flask','FastAPI','TensorFlow']},
+ {name:'infra-core',img:'docker:24',port:'SYSTEM',mem:'48MB / 96MB',bar:'bg-green-500/60',tags:['Docker','CI/CD','Vercel']}
+];
+const DEPLOYS=[
+ {st:'LIVE',cls:'text-green-500 bg-green-500/10',dot:true,title:'GENOIS',link:'https://genois.in',sub:'Founder & AI Engineer · Aug 2024 — Present',
+  desc:'Production AI Career OS serving Indian engineering students — 10-domain personalized roadmap engine, 17-agent autonomous pipeline (Claude API + n8n) automating content, LinkedIn outreach and cold email, and full 4-tier Razorpay billing. Operated solo on Vercel + GoDaddy DNS.',
+  tags:['Next.js 14','Supabase','Claude API','Razorpay','n8n'],foot:[['STATUS','Live'],['ROLE','Founder'],['STACK','Vercel · Supabase']]},
+ {st:'ACTIVE',cls:'text-amber-500 bg-amber-500/10',dot:false,title:'SENTRIX',sub:'Co-Founder · Cybersecurity Startup',
+  desc:'Cybersecurity startup co-founded alongside GENOIS — selected for the T-Hub Maruti Suzuki Mobility Challenge.',
+  tags:['Security','Networking','Startup'],foot:[['ROLE','Co-Founder'],['SELECTED','T-Hub MS Challenge'],['DOMAIN','Security']]},
+ {st:'DEPLOYED',cls:'text-cyan-500 bg-cyan-500/10',dot:false,title:'CyberScan Pro',sub:'Network Security Intelligence · Oct — Dec 2024',
+  desc:'Multi-threaded TCP scanner covering 1,024 ports in under 15 seconds, real-time CVE lookups against NIST NVD with TTL-based OS fingerprinting, 30+ service scanner and automated HTML audit reports with risk scoring.',
+  tags:['Python','Flask','NIST NVD API'],foot:[['PORTS','1,024'],['SCAN TIME','<15s'],['REPORTS','HTML + risk score']]},
+ {st:'DEPLOYED',cls:'text-cyan-500 bg-cyan-500/10',dot:false,title:'Financial Data Warehouse',sub:'Data Engineering · Apr — Jun 2025',
+  desc:'Enterprise warehouse with star & snowflake schema supporting real-time analytics, automated Python ETL pipelines for multi-source ingestion, and SQL tuning that improved aggregation performance by 35%.',
+  tags:['SQL','SSMS','Python (ETL)'],foot:[['PERF','+35%'],['MODELS','Star · Snowflake'],['ETL','Automated']]},
+ {st:'ACTIVE',cls:'text-amber-500 bg-amber-500/10',dot:false,title:'Mini Compiler',sub:'Systems Programming · Apr — Sep 2025',
+  desc:'Complete compiler pipeline — lexical analysis, parsing, AST generation, semantic analysis and intermediate code generation — for a custom language, with robust cross-stage error reporting and modular architecture.',
+  tags:['Python','C++'],foot:[['STAGES','5'],['LANG','Custom'],['ERR REPORT','All stages']]}
+];
+const LOGS=[
+ {ts:'[2024-08 → present]',svc:'geno.service',status:'active (running)',role:'Founder & AI Engineer — GENOIS · genois.in',
+  pts:['Own the full lifecycle — product design, system architecture, development, deployment and operation — of a production AI platform serving Indian engineering students.',
+  'Designed and engineered a 17-agent autonomous pipeline (Claude API + n8n) automating content generation, LinkedIn outreach and cold email with no manual intervention.',
+  'Built a 10-domain personalized roadmap engine, proprietary scoring model and 4-tier Razorpay billing infrastructure; operate the entire stack solo on Vercel + GoDaddy DNS.']},
+ {ts:'[2025-04 → 2025-06]',svc:'warehouse-etl.service',status:'exited (0)',role:'Data Engineering — Financial Data Warehouse · SSMS, Python (ETL)',
+  pts:['Designed enterprise data warehouse schema using star & snowflake modeling to support real-time analytics and financial data consolidation.',
+  'Developed automated ETL pipelines in Python for data ingestion, cleansing and transformation from multiple sources.',
+  'Optimized SQL queries through strategic indexing and normalization, improving aggregation performance by 35%.']},
+ {ts:'[2025-04 → 2025-09]',svc:'minicompiler.service',status:'exited (0)',role:'Systems Programming — Compiler Construction · Python, C++',
+  pts:['Implemented a complete compiler pipeline: lexical analysis, parsing, AST generation, semantic analysis and intermediate code generation for a custom programming language.',
+  'Built robust error-reporting mechanisms across all compiler stages to improve debugging and developer feedback.',
+  'Designed modular architecture separating compiler components for maintainability, testing and debugging efficiency.']},
+ {ts:'[2024-10 → 2024-12]',svc:'cyberscan.service',status:'exited (0)',role:'Security Tooling — CyberScan Pro · Python, Flask, NIST NVD API',
+  pts:['Engineered a multi-threaded TCP scanner covering 1,024 ports in under 15 seconds.',
+  'Integrated real-time CVE lookups against the NIST NVD database with OS fingerprinting via TTL analysis.',
+  'Built companion 30+ service port scanner and automated generation of HTML security audit reports with risk scoring.']}
+];
+const ACH=[
+ {ico:'🚀',t:'Entrepreneurship',x:'Founder of GENOIS (AI Career OS) + 3 additional AI products; co-founder of SENTRIX cybersecurity startup.'},
+ {ico:'🏆',t:'Competitive Programming',x:'700+ problems solved across LeetCode & GeeksforGeeks; peak virtual contest rank of 768.'},
+ {ico:'🔓',t:'Open Source',x:'Docs, bug fixes & technical feedback to projects including Microsoft and Django; TailwindCSS discussions.'},
+ {ico:'🤝',t:'Community',x:'Reported and helped correct verified issues on GeeksforGeeks across open-source projects.'},
+ {ico:'🥇',t:'Competitions',x:'1st Place Roborace & 2nd Place Robowar — Advitya Fest, KLE Tech (2024); Top-15 national finalist, Naviya Edge — NAIN 2.0.'},
+ {ico:'🔬',t:'Research',x:'Exploring AI-based predictive caching and Smart Finance system architecture.'},
+ {ico:'🐙',t:'GitHub',x:'50+ repositories spanning DSA, backend, databases and systems; 3+ focused technical repos with community feedback.'},
+ {ico:'💸',t:'Grants & Programs',x:'Applied to Y Combinator (YC W25) for GENOIS; $10K grant proposal to Emergent Ventures (Tyler Cowen / Mercatus Center).'}
+];
+const CERTS=[
+ {t:'AI / ML',items:['Build Your First AI Model (3 Days)','Gemini AI Clone','Prompt Engineering','Data Science']},
+ {t:'Web Dev',items:['Full Stack Web Development','Netflix Clone (HTML/CSS)','Jio Cinema React Clone','Git & GitHub Bootcamp']},
+ {t:'Security',items:['Cybersecurity Fundamentals','DSA in C/C++','Python Using AI Workshop']},
+ {t:'Additional',items:['10+ certifications: ML fundamentals','Cloud basics · System design','Clean coding · industry workflows']}
+];
+const FALLBACK_REPOS=[
+ {name:'genois-platform',desc:'AI Career OS — 10-domain roadmaps, 17-agent pipeline, Razorpay billing',lang:'TypeScript'},
+ {name:'agent-pipeline',desc:'17-agent autonomous pipeline — Claude API + n8n workflows',lang:'JavaScript'},
+ {name:'cyberscan-pro',desc:'Multi-threaded TCP scanner + real-time NIST NVD CVE lookups',lang:'Python'},
+ {name:'financial-data-warehouse',desc:'ETL pipelines + star/snowflake schema, +35% aggregation perf',lang:'Python'},
+ {name:'mini-compiler',desc:'Complete compiler: lexer → parser → AST → semantic → codegen',lang:'Python'},
+ {name:'dsa-journey',desc:'700+ problems — patterns, notes and solutions',lang:'C++'}
+];
+const LANGC={'Python':'#3572A5','JavaScript':'#f1e05a','TypeScript':'#3178c6','C++':'#f34b7d','C':'#555','HTML':'#e34c26','CSS':'#563d7c','Shell':'#89e051','Dockerfile':'#384d54','Jupyter Notebook':'#DA5B0B'};
+/* Blog — replace href:'#' with your real post URLs */
+const BLOG=[
+ {date:'2025',tag:'AI Systems',title:'Running a 17-agent pipeline with Claude + n8n',x:'Lessons from GENOIS: orchestrating autonomous content, outreach and email agents with zero manual intervention.',href:'#'},
+ {date:'2025',tag:'DevOps',title:'Shipping solo: genois.in from idea to production',x:'How one person runs the full stack — Next.js, Supabase, Razorpay billing, Vercel and GoDaddy DNS.',href:'#'},
+ {date:'2025',tag:'Systems',title:'Notes from building a mini compiler',x:'Lexer → parser → AST → semantic analysis → codegen. What breaks, and how error reporting saves you.',href:'#'}
+];
+const ENDPOINTS=[
+ {m:'GET',path:'/github',code:'200 OK',val:'github.com/abhigrajput',act:'OPEN',fn:()=>window.open('https://github.com/abhigrajput','_blank')},
+ {m:'GET',path:'/linkedin',code:'200 OK',val:'linkedin.com/in/abhigrajput05',act:'OPEN',fn:()=>window.open('https://linkedin.com/in/abhigrajput05','_blank')},
+ {m:'GET',path:'/genois',code:'302 FOUND',val:'genois.in',act:'VISIT',fn:()=>window.open('https://genois.in','_blank')},
+ {m:'GET',path:'/email',code:'200 OK',val:EMAIL,act:'COPY',fn:copyEmail},
+ {m:'POST',path:'/message',code:'201 CREATED',val:'form →',act:'SEND',fn:()=>$('#f-name').focus()}
+];
+
+/* ================= RENDERERS ================= */
+function spark(color){
+  const pts=[];let v=20;
+  for(let x=0;x<=120;x+=12){v=Math.max(4,Math.min(26,v+(Math.random()*10-5)));pts.push(x+','+v.toFixed(1));}
+  return '<svg class="w-full h-8" viewBox="0 0 120 30" preserveAspectRatio="none"><polyline fill="none" stroke="'+color+'" stroke-width="1.5" stroke-linecap="round" points="'+pts.join(' ')+'"/></svg>';
+}
+function cnt(n,suf){return '<span class="cnt" data-count="'+n+'" data-suffix="'+(suf||'')+'">0</span>';}
+function delay(i){return ' style="transition-delay:'+(i*60)+'ms"';}
+
+ $('#metrics-grid').innerHTML=[
+ {l:'Services',ico:'container',n:8,s:'',cap:'All Healthy',dot:true,c:'#22c55e'},
+ {l:'Repos',ico:'git-commit-horizontal',n:50,s:'+',cap:'Trending ↑',trend:true,c:'#22c55e'},
+ {l:'AI Agents',ico:'bot',n:17,s:'',cap:'Live · genois.in',dot:true,c:'#22c55e'},
+ {l:'Problems',ico:'keyboard',n:700,s:'+',cap:'Peak rank #768',dot:false,c:'#06b6d4'}
+].map((m,i)=>'<div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 sm:p-5"'+delay(i)+'>'+
+ '<div class="flex items-center justify-between mb-3"><span class="text-[11px] font-mono text-neutral-500 uppercase tracking-wider">'+m.l+'</span><i data-lucide="'+m.ico+'" class="w-4 h-4 text-neutral-600"></i></div>'+
+ '<div class="text-2xl sm:text-3xl font-semibold text-white mb-1">'+cnt(m.n,m.s)+'</div>'+
+ '<div class="flex items-center gap-1.5 mb-3">'+(m.trend?'<i data-lucide="trending-up" class="w-3 h-3" style="color:'+m.c+'"></i>':'<span class="w-1.5 h-1.5 rounded-full" style="background:'+m.c+'"></span>')+
+ '<span class="text-[11px] font-mono" style="color:'+m.c+'">'+m.cap+'</span></div>'+spark(m.c)+'</div>').join('');
+
+ $('#gh-stats').innerHTML=[
+ {n:50,s:'+',l:'Repositories',c:'text-white'},{n:700,s:'+',l:'Problems Solved',c:'text-green-500'},
+ {n:3,s:'+',l:'Community Repos',c:'text-cyan-500'},{n:4,s:'',l:'AI Products',c:'text-amber-500'}
+].map(x=>'<div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 text-center"><div class="text-2xl font-semibold '+x.c+' mb-0.5">'+cnt(x.n,x.s)+'</div><div class="font-mono text-[10px] text-neutral-500 uppercase tracking-wider">'+x.l+'</div></div>').join('');
+
+/* heatmap */
+(function(){
+  const cols=[],lv=['#161616','#0e4429','#006d32','#26a641','#39d353'];
+  for(let w=0;w<20;w++){let c='<div class="flex flex-col gap-[3px]">';
+    for(let d=0;d<7;d++){const r=Math.random();const k=r<.28?0:r<.55?1:r<.75?2:r<.9?3:4;
+      c+='<div class="gh-cell w-2.5 h-2.5 rounded-sm" style="background:'+lv[k]+'"></div>';}
+    cols.push(c+'</div>');}
+  $('#heatmap').innerHTML=cols.join('');
+})();
+
+/* repos — real data from GitHub API, static fallback */
+function repoRow(r,url,stars,forks){
+  const c=LANGC[r.lang]||'#6b7280';
+  const meta=(stars!=null)?'<span class="flex items-center gap-1 font-mono text-[10px] text-neutral-500"><i data-lucide="star" class="w-3 h-3"></i>'+stars+'</span><span class="flex items-center gap-1 font-mono text-[10px] text-neutral-500"><i data-lucide="git-fork" class="w-3 h-3"></i>'+forks+'</span>':'';
+  return '<a href="'+url+'" target="_blank" class="repo-row flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-5 py-3.5 gap-2">'+
+  '<div class="flex items-center gap-3 min-w-0"><i data-lucide="book-marked" class="w-4 h-4 text-neutral-600 flex-shrink-0"></i><div class="min-w-0">'+
+  '<div class="font-mono text-[12px] text-cyan-400 hover:underline truncate">'+r.name+'</div>'+
+  '<div class="font-mono text-[10px] text-neutral-600 truncate">'+r.desc+'</div></div></div>'+
+  '<div class="flex items-center gap-4 ml-7 sm:ml-0 flex-shrink-0"><span class="flex items-center gap-1 font-mono text-[10px] text-neutral-500"><span class="w-2.5 h-2.5 rounded-full" style="background:'+c+'"></span>'+r.lang+'</span>'+meta+'</div></a>';
+}
+function renderRepos(list,live){
+  $('#repo-list').innerHTML=list.map(r=>repoRow(r,live?r.html_url:'https://github.com/abhigrajput',live?r.stargazers_count:null,live?r.forks_count:null)).join('');
+  lucide.createIcons();
+}
+renderRepos(FALLBACK_REPOS,false);
+fetch('https://api.github.com/users/abhigrajput/repos?sort=updated&per_page=100')
+ .then(r=>{if(!r.ok)throw 0;return r.json();})
+ .then(list=>{const top=list.filter(r=>!r.fork).sort((a,b)=>(b.stargazers_count+b.forks_count*2)-(a.stargazers_count+a.forks_count*2)).slice(0,6);
+   if(top.length)renderRepos(top.map(r=>({name:r.name,desc:r.description||'—',lang:r.language||'—',html_url:r.html_url,stargazers_count:r.stargazers_count,forks_count:r.forks_count})),true);})
+ .catch(()=>{});
+
+ $('#services-grid').innerHTML=SERVICES.map((s,i)=>
+ '<div class="service-card reveal bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"'+delay(i)+'>'+
+ '<div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span><span class="font-mono text-[12px] text-white font-medium">'+s.name+'</span></div>'+
+ '<span class="text-[9px] font-mono text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">RUNNING</span></div>'+
+ '<div class="font-mono text-[10px] text-neutral-600 mb-3">'+s.img+'</div>'+
+ '<div class="flex items-center justify-between font-mono text-[10px] text-neutral-500 mb-2"><span>'+s.port+'</span><span>'+s.mem+'</span></div>'+
+ '<div class="w-full h-1 bg-[#1a1a1a] rounded-full overflow-hidden mb-3"><div class="h-full rounded-full metric-bar" style="width:50%" data-grow="'+s.bar+'"></div></div>'+
+ '<div class="flex flex-wrap gap-1.5">'+s.tags.map(t=>'<span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">'+t+'</span>').join('')+'</div></div>').join('');
+
+ $('#deploy-grid').innerHTML=DEPLOYS.map((d,i)=>
+ '<div class="reveal deploy-card bg-[#111111] border border-[#1e1e1e] rounded-xl p-5 relative overflow-hidden"'+delay(i)+'>'+
+ '<div class="absolute top-3 right-3"><span class="text-[9px] font-mono px-2 py-1 rounded font-medium flex items-center gap-1 '+d.cls+'">'+(d.dot?'<span class="w-1.5 h-1.5 rounded-full bg-green-500 pulse-dot"></span>':'')+d.st+'</span></div>'+
+ '<div class="mb-4 pr-16"><h3 class="font-mono text-sm text-white font-medium">'+(d.link?'<a href="'+d.link+'" target="_blank" class="hover:text-green-500 transition-colors">'+d.title+' ↗</a>':d.title)+'</h3>'+
+ '<p class="text-[11px] text-neutral-600 font-mono mt-0.5">'+d.sub+'</p></div>'+
+ '<p class="text-[12px] text-neutral-400 mb-4 leading-relaxed">'+d.desc+'</p>'+
+ '<div class="flex flex-wrap gap-1.5 mb-4">'+d.tags.map(t=>'<span class="text-[10px] font-mono text-neutral-400 bg-[#1a1a1a] px-2 py-0.5 rounded">'+t+'</span>').join('')+'</div>'+
+ '<div class="grid grid-cols-3 gap-2 pt-3 border-t border-[#1e1e1e]">'+d.foot.map(f=>'<div><p class="font-mono text-[9px] text-neutral-600 uppercase tracking-wider">'+f[0]+'</p><p class="font-mono text-[11px] text-green-400 mt-0.5">'+f[1]+'</p></div>').join('')+'</div></div>').join('');
+
+ $('#ach-grid').innerHTML=ACH.map((a,i)=>
+ '<div class="reveal bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"'+delay(i)+'>'+
+ '<div class="text-xl mb-2">'+a.ico+'</div><h3 class="font-mono text-[12px] text-white font-medium mb-1.5">'+a.t+'</h3>'+
+ '<p class="text-[11px] text-neutral-500 leading-relaxed">'+a.x+'</p></div>').join('');
+
+ $('#certs-grid').innerHTML=CERTS.map((c,i)=>
+ '<div class="bg-[#111111] border border-[#1e1e1e] rounded-xl p-4"'+delay(i)+'>'+
+ '<div class="font-mono text-[10px] text-green-500 uppercase tracking-wider mb-2.5">'+c.t+'</div>'+
+ '<ul class="space-y-1.5">'+c.items.map(x=>'<li class="text-[11.5px] text-neutral-400 font-mono flex items-start gap-1.5"><span class="text-green-600 mt-px">›</span>'+x+'</li>').join('')+'</ul></div>').join('');
+
+ $('#logs-list').innerHTML=LOGS.map((l,i)=>
+ '<div class="reveal log-line bg-[#111111] border border-[#1e1e1e] rounded-xl p-4 sm:p-5 border-l-2 border-l-green-500/40"'+delay(i)+'>'+
+ '<div class="font-mono text-[12px] flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2.5"><span class="text-green-500">'+l.ts+'</span>'+
+ '<span class="text-white font-medium">'+l.svc+'</span><span class="text-neutral-600">▸ '+l.status+'</span>'+
+ '<span class="text-neutral-500 text-[11px]">— '+l.role+'</span></div>'+
+ '<ul class="space-y-1.5 pl-1">'+l.pts.map(p=>'<li class="text-[12.5px] text-neutral-400 leading-relaxed flex gap-2"><span class="text-green-600 flex-shrink-0">•</span>'+p+'</li>').join('')+'</ul></div>').join('');
+
+ $('#blog-grid').innerHTML=BLOG.map((b,i)=>
+ '<a href="'+b.href+'" class="blog-card reveal block bg-[#111111] border border-[#1e1e1e] rounded-xl p-5"'+delay(i)+'>'+
+ '<div class="flex items-center gap-2 mb-3"><span class="font-mono text-[10px] text-neutral-600">'+b.date+'</span>'+
+ '<span class="text-[9px] font-mono text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">'+b.tag+'</span></div>'+
+ '<h3 class="text-white font-medium text-[14px] leading-snug mb-2">'+b.title+'</h3>'+
+ '<p class="text-[12px] text-neutral-500 leading-relaxed mb-3">'+b.x+'</p>'+
+ '<span class="font-mono text-[11px] text-green-500 flex items-center gap-1">read <i data-lucide="arrow-right" class="w-3 h-3"></i></span></a>').join('');
+
+ $('#endpoint-list').innerHTML=ENDPOINTS.map((e,i)=>{
+  const mc=e.m==='GET'?'text-green-500':'text-cyan-500';
+  return '<div class="repo-row flex items-center justify-between px-4 sm:px-5 py-3 gap-3">'+
+  '<div class="flex items-center gap-3 min-w-0 font-mono text-[12px]"><span class="'+mc+' font-medium w-9">'+e.m+'</span>'+
+  '<span class="text-neutral-300 truncate">'+e.path+'</span><span class="text-neutral-600 text-[10px] hidden sm:inline">'+e.code+'</span>'+
+  '<span class="text-neutral-600 text-[10px] truncate hidden md:inline">'+e.val+'</span></div>'+
+  '<button data-ep="'+i+'" class="font-mono text-[10px] text-neutral-500 hover:text-green-500 border border-[#2a2a2a] hover:border-green-500/30 rounded px-2 py-1 transition-colors flex-shrink-0">'+e.act+'</button></div>';
+}).join('');
+ $$('#endpoint-list [data-ep]').forEach(b=>b.addEventListener('click',()=>ENDPOINTS[+b.dataset.ep].fn()));
+
+ $('#year').textContent=new Date().getFullYear();
+ $('#last-login').textContent=new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:false});
+
+/* ================= BOOT SEQUENCE ================= */
+const OK='<span class="text-green-500 font-bold">[  OK  ]</span>';
+const TS=t=>'<span class="text-neutral-700">['+t+']</span>';
+const BOOT=[
+ TS('    0.000000')+' Linux version 6.8.0-abhishek (root@abhishek.server) (gcc 13.2.0) #1 SMP',
+ TS('    0.041210')+' CPU: 8 cores online · MEM: 32GB available',
+ TS('    0.108433')+' Loading portfolio kernel modules...',
+ OK+' Mounted /skills — 5 modules loaded',
+ OK+' Mounted /projects — 5 deployments found',
+ OK+' Mounted /certifications — 10+ records found',
+ OK+' Started geno.service — AI Career OS (genois.in)',
+ OK+' Started agents.target — 17 autonomous agents online',
+ OK+' Linked github.com/abhigrajput — 50+ repositories',
+ OK+' Reached target — abhishek.server operational',
+ '&nbsp;',
+ 'abhishek.server login: <span class="text-cyan-400">guest</span>',
+ '<span class="text-green-500">Authentication successful</span> — initializing dashboard...'
+];
+const bootEl=$('#boot-overlay'),bootText=$('#boot-text');
+let bi=0,bt=null,booted=false;
+function bootStep(){
+  if(booted)return;
+  if(bi>=BOOT.length){finishBoot();return;}
+  const d=document.createElement('div');d.className='boot-line';d.innerHTML=BOOT[bi++]||'&nbsp;';
+  bootText.appendChild(d);
+  bt=setTimeout(bootStep,bi<3?90:130+Math.random()*130);
+}
+function finishBoot(){
+  if(booted)return;booted=true;clearTimeout(bt);
+  bootEl.style.opacity='0';
+  document.body.classList.remove('overflow-hidden');
+  $('#status-bar').classList.replace('opacity-0','opacity-100');
+  $('#main-nav').classList.replace('opacity-0','opacity-100');
+  setTimeout(()=>bootEl.remove(),650);
+  startObservers();
+}
+if(matchMedia('(prefers-reduced-motion:reduce)').matches){finishBoot();}
+else{bootStep();window.addEventListener('keydown',finishBoot,{once:true});bootEl.addEventListener('click',finishBoot,{once:true});setTimeout(finishBoot,6500);}
+
+/* ================= STATUS BAR ================= */
+const t0=Date.now();
+const CONN=Math.floor(1000+Math.random()*9000)+'.'+String(Math.floor(Math.random()*1e12)).padStart(12,'0');
+ $('#conn-val').textContent=CONN;
+fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(d=>{$('#ip-val').textContent=d.ip;$('#foot-ip').textContent=d.ip;}).catch(()=>{$('#ip-val').textContent='local';$('#foot-ip').textContent='local';});
+setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);
+  $('#uptime-val').textContent=String(Math.floor(s/3600)).padStart(2,'0')+':'+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(s%60).padStart(2,'0');},1000);
+let cpu=15,mem=37;
+function drift(v,a,b){return Math.max(a,Math.min(b,v+(Math.random()-.5)*9));}
+function meters(){cpu=drift(cpu,6,42);mem=drift(mem,30,62);
+  $('#cpu-bar').style.width=cpu+'%';$('#cpu-val').textContent=Math.round(cpu)+'%';
+  $('#mem-bar').style.width=mem+'%';$('#mem-val').textContent=Math.round(mem)+'%';}
+meters();setInterval(meters,2200);
+
+/* ================= REVEAL + COUNTERS ================= */
+function animateCount(el){
+  const t=+el.dataset.count,suf=el.dataset.suffix||'',s0=performance.now();
+  (function step(now){const p=Math.min((now-s0)/1200,1);el.textContent=Math.round(t*(1-Math.pow(1-p,3)))+suf;if(p<1)requestAnimationFrame(step);})(s0);
+}
+let observersOn=false;
+function startObservers(){
+  if(observersOn)return;observersOn=true;
+  const io=new IntersectionObserver(es=>es.forEach(en=>{
+    if(!en.isIntersecting)return;
+    en.target.classList.add('active');
+    en.target.querySelectorAll('.cnt').forEach(c=>{if(!c.dataset.done){c.dataset.done='1';animateCount(c);}});
+    en.target.querySelectorAll('[data-grow]').forEach(b=>b.style.width='50%');
+    io.unobserve(en.target);
+  }),{threshold:.1});
+  $$('.reveal').forEach(el=>io.observe(el));
+}
+
+/* ================= TOAST / COPY ================= */
+let tt;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.remove('opacity-0');clearTimeout(tt);tt=setTimeout(()=>t.classList.add('opacity-0'),2200);}
+async function copyEmail(){
+  try{await navigator.clipboard.writeText(EMAIL);}catch(e){const ta=document.createElement('textarea');ta.value=EMAIL;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}
+  toast('email copied — abhigrajput2004@gmail.com');
+}
+
+/* ================= TERMINAL ================= */
+const tout=$('#term-out'),tin=$('#term-in');
+function tprint(html,cls){const d=document.createElement('div');d.className='log-line '+(cls||'');d.innerHTML=html;tout.appendChild(d);tout.scrollTop=tout.scrollHeight;}
+const CMDS={
+ 'help':()=>tprint('available: whoami · ls · cat about.txt · cat geno.txt · cat contact.txt · open github · open linkedin · open genois · sudo hire abhishek · date · clear'),
+ 'whoami':()=>tprint('guest — but the admin is <span class="text-green-400">Abhishek</span>: founder & full-stack engineer, final-year CSE @ KLE Tech, Hubballi'),
+ 'ls':()=>tprint('about.txt&nbsp;&nbsp;geno.txt&nbsp;&nbsp;contact.txt&nbsp;&nbsp;projects/&nbsp;&nbsp;skills/'),
+ 'cat about.txt':()=>tprint('Founder of <span class="text-green-400">GENOIS</span> (genois.in) · co-founder SENTRIX · 700+ problems (peak rank 768) · 50+ repos · Next.js / Node / Python / Claude API'),
+ 'cat geno.txt':()=>tprint('GENOIS — AI Career OS: 10-domain roadmaps · 17-agent pipeline (Claude + n8n) · 4-tier Razorpay billing · live at <span class="text-cyan-400">genois.in</span>'),
+ 'cat contact.txt':()=>tprint('email: abhigrajput2004@gmail.com · github: github.com/abhigrajput · linkedin: /in/abhigrajput05'),
+ 'open github':()=>{window.open('https://github.com/abhigrajput','_blank');tprint('→ opening github.com/abhigrajput ...');},
+ 'open linkedin':()=>{window.open('https://linkedin.com/in/abhigrajput05','_blank');tprint('→ opening linkedin.com/in/abhigrajput05 ...');},
+ 'open genois':()=>{window.open('https://genois.in','_blank');tprint('→ opening genois.in ...');},
+ 'sudo hire abhishek':()=>{copyEmail();tprint('<span class="text-green-400">permission granted ✔</span> — email copied to clipboard');},
+ 'date':()=>tprint(new Date().toString()),
+ 'clear':()=>{tout.innerHTML='';}
+};
+tin.addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const raw=tin.value.trim().toLowerCase();tin.value='';
+  tprint('<span class="text-green-500">guest@abhishek.server:~$</span> <span class="text-neutral-300">'+raw.replace(/</g,'&lt;')+'</span>');
+  if(!raw)return;
+  if(CMDS[raw])CMDS[raw]();
+  else tprint('command not found: '+raw.replace(/</g,'&lt;')+' — try <span class="text-green-400">help</span>');
+});
+ $('#terminal').addEventListener('click',()=>tin.focus());
+tprint('Welcome to <span class="text-green-400">abhishek.server</span> — type <span class="text-green-400">help</span> to get started.');
+
+/* ================= CONTACT FORM ================= */
+ $('#contact-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  const n=$('#f-name').value,em=$('#f-email').value,m=$('#f-msg').value;
+  window.location.href='mailto:'+EMAIL+'?subject='+encodeURIComponent('Portfolio contact from '+n)+'&body='+encodeURIComponent(m+'\n\n— '+n+' ('+em+')');
+  toast('opening your mail client…');
+});
+
+/* ================= MISC UI ================= */
+const stb=$('#scroll-top-btn');
+window.addEventListener('scroll',()=>{const on=scrollY>600;stb.classList.toggle('opacity-0',!on);stb.classList.toggle('pointer-events-none',!on);},{passive:true});
+ $('#mobile-menu-btn').addEventListener('click',()=>$('#mobile-menu').classList.toggle('hidden'));
+ $$('.mobile-link').forEach(a=>a.addEventListener('click',()=>$('#mobile-menu').classList.add('hidden')));
+
+/* ================= ROUTER (#/genois) ================= */
+const home=$('#page-home'),geno=$('#page-genois');
+function route(){
+  const g=location.hash==='#/genois';
+  home.hidden=g;geno.hidden=!g;
+  document.title=g?'GENOIS — AI Career OS · abhishek.server':'abhishek@server:~$ — System Dashboard';
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',route);
+
+console.log('%c abhishek.server %c all systems operational ','background:#0d0d0d;color:#22c55e','background:#22c55e;color:#0a0a0a');
+lucide.createIcons();
+})();
+</script>
+</body>
+</html>
